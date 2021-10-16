@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using System.Runtime.InteropServices;
 using System.Windows.Forms;
@@ -20,103 +21,52 @@ class Program
         int dwFlags);
 
     #region Import Low Level Functions
-    [DllImport("User32.dll")]
-    [return: MarshalAs(UnmanagedType.Bool)]
-    public static extern Boolean EnumDisplaySettings(
-        [param: MarshalAs(UnmanagedType.LPTStr)]
-        string lpszDeviceName,
-        [param: MarshalAs(UnmanagedType.U4)]
-        int iModeNum,
-        [In, Out]
-        ref DEVMODE lpDevMode);
+    [DllImport("user32.dll")]
+    public static extern bool EnumDisplaySettings(
+              string deviceName, int modeNum, ref DEVMODE devMode);
+    const int ENUM_CURRENT_SETTINGS = -1;
 
-    [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Ansi)]
+    const int ENUM_REGISTRY_SETTINGS = -2;
+
+
+    [StructLayout(LayoutKind.Sequential)]
     public struct DEVMODE
     {
-        [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 32)]
+
+        private const int CCHDEVICENAME = 0x20;
+        private const int CCHFORMNAME = 0x20;
+        [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 0x20)]
         public string dmDeviceName;
-        [MarshalAs(UnmanagedType.U2)]
-        public UInt16 dmSpecVersion;
-
-        [MarshalAs(UnmanagedType.U2)]
-        public UInt16 dmDriverVersion;
-
-        [MarshalAs(UnmanagedType.U2)]
-        public UInt16 dmSize;
-
-        [MarshalAs(UnmanagedType.U2)]
-        public UInt16 dmDriverExtra;
-
-        [MarshalAs(UnmanagedType.U4)]
-        public UInt32 dmFields;
-
-        public POINTL dmPosition;
-
-        [MarshalAs(UnmanagedType.U4)]
-        public UInt32 dmDisplayOrientation;
-
-        [MarshalAs(UnmanagedType.U4)]
-        public UInt32 dmDisplayFixedOutput;
-
-        [MarshalAs(UnmanagedType.I2)]
-        public Int16 dmColor;
-
-        [MarshalAs(UnmanagedType.I2)]
-        public Int16 dmDuplex;
-
-        [MarshalAs(UnmanagedType.I2)]
-        public Int16 dmYResolution;
-
-        [MarshalAs(UnmanagedType.I2)]
-        public Int16 dmTTOption;
-
-        [MarshalAs(UnmanagedType.I2)]
-        public Int16 dmCollate;
-
-        [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 32)]
+        public short dmSpecVersion;
+        public short dmDriverVersion;
+        public short dmSize;
+        public short dmDriverExtra;
+        public int dmFields;
+        public int dmPositionX;
+        public int dmPositionY;
+        public ScreenOrientation dmDisplayOrientation;
+        public int dmDisplayFixedOutput;
+        public short dmColor;
+        public short dmDuplex;
+        public short dmYResolution;
+        public short dmTTOption;
+        public short dmCollate;
+        [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 0x20)]
         public string dmFormName;
-
-        [MarshalAs(UnmanagedType.U2)]
-        public UInt16 dmLogPixels;
-
-        [MarshalAs(UnmanagedType.U4)]
-        public UInt32 dmBitsPerPel;
-
-        [MarshalAs(UnmanagedType.U4)]
-        public UInt32 dmPelsWidth;
-
-        [MarshalAs(UnmanagedType.U4)]
-        public UInt32 dmPelsHeight;
-
-        [MarshalAs(UnmanagedType.U4)]
-        public UInt32 dmDisplayFlags;
-
-        [MarshalAs(UnmanagedType.U4)]
-        public UInt32 dmDisplayFrequency;
-
-        [MarshalAs(UnmanagedType.U4)]
-        public UInt32 dmICMMethod;
-
-        [MarshalAs(UnmanagedType.U4)]
-        public UInt32 dmICMIntent;
-
-        [MarshalAs(UnmanagedType.U4)]
-        public UInt32 dmMediaType;
-
-        [MarshalAs(UnmanagedType.U4)]
-        public UInt32 dmDitherType;
-
-        [MarshalAs(UnmanagedType.U4)]
-        public UInt32 dmReserved1;
-
-        [MarshalAs(UnmanagedType.U4)]
-        public UInt32 dmReserved2;
-
-        [MarshalAs(UnmanagedType.U4)]
-        public UInt32 dmPanningWidth;
-
-        [MarshalAs(UnmanagedType.U4)]
-        public UInt32 dmPanningHeight;
+        public short dmLogPixels;
+        public int dmBitsPerPel;
+        public int dmPelsWidth;
+        public int dmPelsHeight;
+        public int dmDisplayFlags;
+        public int dmDisplayFrequency;
+        public int dmICMMethod;
+        public int dmICMIntent;
+        public int dmMediaType;
+        public int dmDitherType;
+        public int dmReserved1;
+        public int dmReserved2;
+        public int dmPanningWidth;
+        public int dmPanningHeight;
     }
 
     [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Ansi)]
@@ -198,7 +148,7 @@ class Program
     public static void CalculateSupportedModes()
     {
         DEVMODE mode = new DEVMODE();
-        mode.dmSize = (ushort)Marshal.SizeOf(mode);
+        mode.dmSize = (short)Marshal.SizeOf(mode);
         DISPLAY_DEVICE displayDevice = new DISPLAY_DEVICE();
         displayDevice.cb = (ushort)Marshal.SizeOf(displayDevice);
 
@@ -227,12 +177,26 @@ class Program
             {
                 CalculateSupportedModes();
                 DEVMODE originalMode = new DEVMODE();
-                originalMode.dmSize = (ushort)Marshal.SizeOf(originalMode);
-                //TODO: Figure out how to get the current setting.
+                originalMode.dmSize = (short)Marshal.SizeOf(originalMode);
+
                 EnumDisplaySettings(null, bestSetting, ref originalMode);
                 DEVMODE newMode = originalMode;
+                //Could possibly save original frequency setting and reuse that later
+                File.WriteAllText("frequencyswitcher_data", originalMode.dmDisplayFrequency.ToString());
 
-                newMode.dmDisplayFrequency = isRunningOnBattery ? (uint)60 : 144;
+                List<int> frequencies = new List<int>();
+                //For now just get all frequencies and use worst and best
+                DEVMODE vDevMode = new DEVMODE();
+                int i = 0;
+                while (EnumDisplaySettings(null, i, ref vDevMode))
+                {
+                    if (!frequencies.Contains(vDevMode.dmDisplayFrequency))
+                        frequencies.Add(vDevMode.dmDisplayFrequency);
+                    i++;
+                }
+                frequencies.Sort();
+
+                newMode.dmDisplayFrequency = isRunningOnBattery ? frequencies.FirstOrDefault() : frequencies.LastOrDefault();
 
                 ChangeDisplaySettings(ref newMode, 0);
             }
@@ -241,27 +205,27 @@ class Program
 
                 CalculateSupportedModes();
                 DEVMODE originalMode = new DEVMODE();
-                originalMode.dmSize = (ushort)Marshal.SizeOf(originalMode);
+                originalMode.dmSize = (short)Marshal.SizeOf(originalMode);
                 //TODO: Figure out how to get the current setting.
                 EnumDisplaySettings(null, bestSetting, ref originalMode);
                 DEVMODE newMode = originalMode;
 
                 //Width
-                uint w = newMode.dmPelsWidth;
+                int w = newMode.dmPelsWidth;
                 //Height
-                uint h = newMode.dmPelsHeight;
+                int h = newMode.dmPelsHeight;
                 //Frequency
-                uint f = newMode.dmDisplayFrequency;
+                int f = newMode.dmDisplayFrequency;
                 //Display (if specific)
                 int d = -1;
                 for (int i = 0; i < args.Length; i++)
                 {
                     if (args[i].Trim().ToLower() == "-w" && args[i + 1] != null)
-                        w = uint.Parse(args[i + 1]);
+                        w = int.Parse(args[i + 1]);
                     if (args[i].Trim().ToLower() == "-h" && args[i + 1] != null)
-                        h = uint.Parse(args[i + 1]);
+                        h = int.Parse(args[i + 1]);
                     if (args[i].Trim().ToLower() == "-f" && args[i + 1] != null)
-                        f = uint.Parse(args[i + 1]);
+                        f = int.Parse(args[i + 1]);
                     if (args[i].Trim().ToLower() == "-d" && args[i + 1] != null)
                         d = int.Parse(args[i + 1]);
                 }
